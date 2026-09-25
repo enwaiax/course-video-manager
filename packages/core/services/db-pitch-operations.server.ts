@@ -103,7 +103,7 @@ export const createPitchOperations = (db: Database) => {
           deliverablesPitches: {
             with: {
               deliverable: {
-                columns: { status: true },
+                columns: { status: true, archived: true },
               },
             },
           },
@@ -113,7 +113,11 @@ export const createPitchOperations = (db: Database) => {
 
     const withState = rows.map((row) => {
       const { deliverablesPitches: dpLinks, ...rest } = row;
-      const statuses = dpLinks.map((dp) => dp.deliverable.status);
+      const statuses = dpLinks.flatMap((dp) =>
+        dp.deliverable && !dp.deliverable.archived
+          ? [dp.deliverable.status]
+          : []
+      );
       return { ...rest, state: derivePitchState(statuses) };
     });
 
@@ -154,7 +158,7 @@ export const createPitchOperations = (db: Database) => {
             deliverablesPitches: {
               with: {
                 deliverable: {
-                  columns: { status: true },
+                  columns: { status: true, archived: true },
                 },
               },
             },
@@ -164,7 +168,11 @@ export const createPitchOperations = (db: Database) => {
 
       const withState = rows.map((row) => {
         const { deliverablesPitches: dpLinks, ...rest } = row;
-        const statuses = dpLinks.map((dp) => dp.deliverable.status);
+        const statuses = dpLinks.flatMap((dp) =>
+          dp.deliverable && !dp.deliverable.archived
+            ? [dp.deliverable.status]
+            : []
+        );
         return { ...rest, state: derivePitchState(statuses) };
       });
 
@@ -226,7 +234,7 @@ export const createPitchOperations = (db: Database) => {
           deliverablesPitches: {
             with: {
               deliverable: {
-                columns: { status: true },
+                columns: { status: true, archived: true },
               },
             },
           },
@@ -242,7 +250,9 @@ export const createPitchOperations = (db: Database) => {
     }
 
     const { deliverablesPitches: dpLinks, ...rest } = pitch;
-    const statuses = dpLinks.map((dp) => dp.deliverable.status);
+    const statuses = dpLinks.flatMap((dp) =>
+      dp.deliverable && !dp.deliverable.archived ? [dp.deliverable.status] : []
+    );
     return { ...rest, state: derivePitchState(statuses) };
   });
 
