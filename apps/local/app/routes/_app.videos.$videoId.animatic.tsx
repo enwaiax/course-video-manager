@@ -21,11 +21,16 @@ import type { Route } from "./+types/_app.videos.$videoId.animatic";
  * student's seat.
  *
  * ONE TAB OF THE VIDEO, inside the `_app` layout, so it carries the same
- * sidebar, breadcrumb and PREVIOUS/NEXT as every other page of a Video. An
- * Animatic is watched a Lesson at a time and the note it produces is per
- * Video, so walking the Lesson's Videos in order is the whole motion; a page
- * of its own outside the layout made that a trip back through the editor.
+ * breadcrumb and PREVIOUS/NEXT as every other page of a Video. An Animatic is
+ * watched a Lesson at a time and the note it produces is per Video, so walking
+ * the Lesson's Videos in order is the whole motion; a page of its own outside
+ * the layout made that a trip back through the editor.
+ *
+ * `fullscreen`, like every other page of a Video: the frame is the thing being
+ * judged, so the left sidebar folds away to the floating button and the width
+ * goes to the picture.
  */
+export const handle = { fullscreen: true };
 
 export const loader = makeLoader({
   effect: ({ params }) =>

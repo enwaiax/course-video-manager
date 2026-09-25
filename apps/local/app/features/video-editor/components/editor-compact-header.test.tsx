@@ -22,6 +22,10 @@ describe("EditorCompactHeader", () => {
     // author in the editor cannot see that an Animatic exists at all.
     expect(html).toContain('href="/videos/v1/animatic"');
     expect(html).toContain("Animatic");
+
+    // In THIS tab. A second tab left the author with two editors of the same
+    // Video open, and the Animatic is a page of the Video like any other.
+    expect(html).not.toContain('target="_blank"');
   });
 
   it("offers nothing to watch when the Video has no Clip Mockups", () => {

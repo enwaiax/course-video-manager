@@ -14,6 +14,7 @@ const VIDEO_SUB_ROUTES = [
   "_app.videos.$videoId.newsletter.tsx",
   "_app.videos.$videoId.move-to-course.tsx",
   "_app.videos.$videoId.thumbnails.tsx",
+  "_app.videos.$videoId.animatic.tsx",
 ];
 
 const NON_EDIT_ROUTES = VIDEO_SUB_ROUTES.filter(

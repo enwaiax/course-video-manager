@@ -46,19 +46,18 @@ export const EditorCompactHeader = (props: {
 
       {/* Into the Animatic, beside the tab switcher. The Mockups tab holds the
           same link, but it is two clicks and a scroll away, and the author
-          reaches for the Animatic from the editor as a whole. A plain anchor,
-          not a `Link`: the route sits outside the `_app` layout on purpose,
-          and it opens in its own tab so the editor keeps its state. */}
+          reaches for the Animatic from the editor as a whole. A `Link`, in
+          this tab, like every other tab of the Video: the Animatic is a page
+          of the Video, and a second tab left the author with two editors
+          open. */}
       {props.hasAnimatic && (
-        <a
-          href={`/videos/${props.videoId}/animatic`}
-          target="_blank"
-          rel="noreferrer"
+        <Link
+          to={`/videos/${props.videoId}/animatic`}
           className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           <PlayIcon className="size-3.5" />
           Animatic
-        </a>
+        </Link>
       )}
 
       {props.showTabSwitcher && (
