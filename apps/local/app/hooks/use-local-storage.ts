@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -85,15 +86,12 @@ export function useLocalStorage(
     writeStored(key, current.value);
   }, [key, current.value]);
 
-  const setValue: Dispatch<SetStateAction<string>> = useCallback(
-    (action) => {
-      setHeld((prev) => ({
-        key: prev.key,
-        value: typeof action === "function" ? action(prev.value) : action,
-      }));
-    },
-    []
-  );
+  const setValue: Dispatch<SetStateAction<string>> = useCallback((action) => {
+    setHeld((prev) => ({
+      key: prev.key,
+      value: typeof action === "function" ? action(prev.value) : action,
+    }));
+  }, []);
 
   return [current.value, setValue];
 }
@@ -155,4 +153,54 @@ export function useLocalStorageStringSet(
   );
 
   return [value, setValue];
+}
+
+/**
+ * A preference that is one of a fixed set of spellings — the enum-shaped
+ * sibling of {@link useLocalStorageBoolean}. A stored value outside the set
+ * (hand-edited, or written by an older build that named the positions
+ * differently) falls back rather than throwing, in the same spirit as
+ * {@link parseStringSet}.
+ *
+ * Unlike the hooks above it writes on set rather than in an effect, and it
+ * re-reads whenever the key changes. Both matter for a preference kept PER
+ * SUBJECT — one key per Course, say: an effect that wrote the current value
+ * whenever the key changed would copy one subject's setting onto the next one
+ * the moment the page switched between them.
+ */
+export function useLocalStorageOneOf<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T
+): [T, (next: T) => void] {
+  // Through the same guarded helpers as every other hook in this file: a read
+  // that throws (a browser blocking storage outright) must fall back, not take
+  // the page down.
+  const read = useCallback(
+    (from: string): T => {
+      const stored = readStored(from) ?? "";
+      return (allowed as readonly string[]).includes(stored)
+        ? (stored as T)
+        : fallback;
+    },
+    [allowed, fallback]
+  );
+
+  const [value, setValue] = useState(() => read(key));
+
+  const readFrom = useRef(key);
+  if (readFrom.current !== key) {
+    readFrom.current = key;
+    setValue(read(key));
+  }
+
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      writeStored(key, next);
+    },
+    [key]
+  );
+
+  return [value, set];
 }

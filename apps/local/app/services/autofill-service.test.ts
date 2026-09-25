@@ -62,15 +62,25 @@ const runAutofill = async (
 };
 
 describe("AutofillService — candidate rules", () => {
-  it("is not a candidate at all when the Video has no Body", async () => {
+  // ADR 0029: no Body is a hard gap — ABSENT or BLANK alike — so the Lesson does
+  // not ship at all and the Autofill never sees it. That is why there is no
+  // "no-body" skip reason any more: a Video the Autofill cannot write from is
+  // withheld one level up, by the classifier, rather than reaching this walk and
+  // being excluded from it. The one button still reaches Publish, because it
+  // counts only the Videos that ship.
+  it.each([
+    ["blank", ""],
+    ["absent", null],
+  ])("does not see a Video at all when its Body is %s", async (_name, body) => {
     const { videoIds, result } = await runAutofill([
-      { path: "01-no-body", videos: [{ body: null, description: null }] },
+      { path: "01-no-body", videos: [{ body, description: null }] },
     ]);
 
     expect(result.candidates).toHaveLength(0);
     expect(result.results).toHaveLength(0);
-    expect(result.skipped.map((s) => s.reason)).toEqual(["no-body"]);
+    expect(result.skipped).toHaveLength(0);
 
+    // Nothing was written, either: the run left the Video exactly as it was.
     const video = await Effect.runPromise(
       readVideo(testDb, videoIds["01-no-body/Explainer"]!)
     );

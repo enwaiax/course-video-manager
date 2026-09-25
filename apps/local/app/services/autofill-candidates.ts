@@ -1,4 +1,4 @@
-import { computeEffectiveSections } from "@/packages/course-json";
+import { computeShippingSections } from "@/packages/course-json";
 import { computeVideoWarnings, type AutofillField } from "./video-warnings";
 
 /**
@@ -11,11 +11,13 @@ import { computeVideoWarnings, type AutofillField } from "./video-warnings";
  *
  * The rules, in the order they decide:
  *
- *   No **Body**       → not a candidate AT ALL, and not merely for its
- *                       `description`. The description is written from the
- *                       Body, so without one there is nothing to write from —
- *                       and a Video with no Body is Matt's work, not the
- *                       Autofill's.
+ *   No **Body**       → never reaches this walk at all. A Body that is absent
+ *                       OR blank is a hard gap, so its Lesson is announced or
+ *                       withheld and never ships (ADR 0029). The rule survives
+ *                       — the description is written from the Body, and a Video
+ *                       with no Body is Matt's work, not the Autofill's — it is
+ *                       simply enforced one level up, by the classifier, so
+ *                       there is no skip reason left for it here.
  *   `description`     → a candidate only when the field is empty. Existing
  *                       text is never overwritten, so running twice is safe.
  *   **Chapters**      → a candidate only when the Video raises **Missing
@@ -41,7 +43,7 @@ export type AutofillCandidate = {
  * publish page shows these, so a missing row in the progress list is never a
  * mystery.
  */
-export type AutofillSkipReason = "no-body" | "untranscribed-clips";
+export type AutofillSkipReason = "untranscribed-clips";
 
 export type AutofillSkip = {
   readonly videoId: string;
@@ -60,7 +62,7 @@ type CandidateVideo = {
   readonly title: string;
   readonly archived: boolean;
   readonly lessonId?: string | null;
-  readonly body?: string | null;
+  readonly body: string | null;
   readonly description?: string | null;
   readonly clips: readonly CandidateClip[];
   readonly chapters: readonly {
@@ -72,6 +74,7 @@ type CandidateVideo = {
 type CandidateLesson = {
   readonly path?: string;
   readonly authoringStatus: string | null;
+  readonly priority: number;
   readonly videos: readonly CandidateVideo[];
 };
 
@@ -98,9 +101,9 @@ export const autofillVideoKey = (parts: {
 }): string => `${parts.sectionPath}/${parts.lessonPath}/${parts.videoTitle}`;
 
 /**
- * Walks the effective output — the exact Videos this **Publish** would ship
- * under the given to-do setting — and splits them into what the Autofill will
- * do and what it is leaving behind.
+ * Walks the shipping output — the exact Videos this **Publish** would ship in
+ * full under the given to-do setting — and splits them into what the Autofill
+ * will do and what it is leaving behind.
  */
 export const selectAutofillCandidates = (
   sections: readonly CandidateSection[],
@@ -109,10 +112,10 @@ export const selectAutofillCandidates = (
   const candidates: AutofillCandidate[] = [];
   const skipped: AutofillSkip[] = [];
 
-  for (const section of computeEffectiveSections(
-    sections,
-    includeTodoLessons
-  )) {
+  // The Videos that SHIP, and only those. A Lesson announced as a Placeholder
+  // Lesson is not one press from complete — it is unfilmed — so counting it here
+  // would make the one button unreachable.
+  for (const section of computeShippingSections(sections, includeTodoLessons)) {
     for (const lesson of section.lessons) {
       for (const video of lesson.videos) {
         if (video.archived) continue;
@@ -134,13 +137,6 @@ export const selectAutofillCandidates = (
         );
         const needsDescription = !video.description?.trim();
         if (!needsDescription && !raisesMissingChapters) continue;
-
-        // The Body is the precondition for the whole feature: it is written by
-        // hand, and nothing downstream of it can be invented without it.
-        if (!video.body?.trim()) {
-          skipped.push({ videoId: video.id, title, reason: "no-body" });
-          continue;
-        }
 
         const liveClips = video.clips.filter((clip) => !clip.archived);
         const allTranscribed =

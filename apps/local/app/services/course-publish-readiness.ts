@@ -7,9 +7,12 @@ import {
   toExportClips,
 } from "./export-hash";
 import { collectCourseViewLints } from "./lesson-warnings";
+import { collectLessonPublishStatuses } from "./course-publish-lesson-statuses";
 import {
+  ANNOUNCE_NOTHING,
   collectPublishBlockers,
-  computeEffectiveSections,
+  computeShippingSections,
+  type PlaceholderFloor,
 } from "@/packages/course-json";
 
 /**
@@ -32,7 +35,13 @@ import {
  * interchangeable. Against `publish` (see course-publish-service):
  *   courseViewLints       REFUSE the publish outright (PublishValidationError).
  *   invalidLessonCombos   Not checked at the gate; they fail the later
- *   incompleteVideos      course.json build, so the publish still cannot land.
+ *                         course.json build, so the publish still cannot land.
+ *   incompleteVideos      Enumerated over the SHIPPING Lessons only, so since
+ *                         ADR 0029 this means a missing `description`. It still
+ *                         FAILS the course.json build (see
+ *                         IncompleteShippingVideoError), and the courseViewLints
+ *                         gate above refuses it earlier, before any byte is
+ *                         uploaded.
  *   unexportedVideoIds    Do NOT refuse anything — publish RENDERS them as its
  *                         `exporting` stage and carries on. They are pending
  *                         machine work (and a failed render does abort), not an
@@ -53,6 +62,17 @@ export const PUBLISH_BLOCKING_LISTS = [
 
 export type PublishBlockingList = (typeof PUBLISH_BLOCKING_LISTS)[number];
 
+/**
+ * The Lesson Publish Status lists, re-exported from the pure walk that decides
+ * them (./course-publish-lesson-statuses) so a caller reading Publish Readiness
+ * names them without reaching past this module.
+ */
+export type {
+  WithheldReason,
+  PlaceholderLesson,
+  WithheldLesson,
+} from "./course-publish-lesson-statuses";
+
 /** A shipping Video that has no matching `.mp4` on disk. */
 export type UnexportedVideo = {
   readonly id: string;
@@ -65,9 +85,24 @@ export type UnexportedVideo = {
  * round-trip, both positions are computed in a single pass: the expensive
  * per-Video existence checks run once, then the pure counters run against the
  * effective Sections for each toggle state.
+ *
+ * `placeholderFloor` answers the other half of the question — "if I set the
+ * floor here, what would this release announce, and what would it drop?". It
+ * decides the `placeholderLessons` and `withheldLessons` lists, and nothing
+ * else: every gate here reads `computeShippingSections`, which the floor cannot
+ * move a Lesson into or out of (it only ever turns a withheld Lesson into a
+ * Placeholder Lesson). So the four outstanding-work lists are
+ * floor-INDEPENDENT, and asking about a floor can never change the answer to
+ * "can this ship?". A gate may only speak about what a release contains, so the
+ * course-view lints (every Lesson Warning and Video Warning), the Lesson
+ * role-combo check and the incomplete-Video record all stay silent about a
+ * Lesson the release does not ship in full.
  */
 export const validatePublishability = Effect.fn("validatePublishability")(
-  function* (versionId: string) {
+  function* (
+    versionId: string,
+    placeholderFloor: PlaceholderFloor = ANNOUNCE_NOTHING
+  ) {
     const versionOps = yield* VersionOperationsService;
     const effectFs = yield* FileSystem.FileSystem;
     const finishedVideosDirectory = yield* Config.string(
@@ -84,8 +119,8 @@ export const validatePublishability = Effect.fn("validatePublishability")(
     for (const section of version.sections) {
       for (const lesson of section.lessons) {
         for (const video of lesson.videos) {
-          // Archived videos are already filtered out of the effective output by
-          // computeEffectiveSections, so they can never reach one of the four
+          // Archived videos are already filtered out of the shipping set by
+          // computeShippingSections, so they can never reach one of the four
           // outstanding-work lists —
           // skipping them here just spares a pointless stat() per archived row.
           if (video.archived) continue;
@@ -110,12 +145,18 @@ export const validatePublishability = Effect.fn("validatePublishability")(
     }
 
     const evaluate = (includeTodoLessons: boolean) => {
-      const effectiveSections = computeEffectiveSections(
+      // THE LESSONS THAT SHIP — the asset set, and the only Lessons a gate may
+      // speak about. Floor-independent by construction (see
+      // computeShippingSections), and the very same walk `course publish` uses
+      // to build its export roster, so `exportsRequired` can never name a
+      // Video that publish would not render.
+      const shippingSections = computeShippingSections(
         version.sections,
         includeTodoLessons
       );
+
       const unexportedVideoIds: string[] = [];
-      for (const section of effectiveSections) {
+      for (const section of shippingSections) {
         for (const lesson of section.lessons) {
           for (const video of lesson.videos) {
             if (exportedById.get(video.id) === false) {
@@ -124,16 +165,27 @@ export const validatePublishability = Effect.fn("validatePublishability")(
           }
         }
       }
-      const courseViewLints = collectCourseViewLints(effectiveSections);
+
+      const courseViewLints = collectCourseViewLints(shippingSections);
       const courseViewLintCount = courseViewLints.length;
 
       // Publish blockers computed from the exact same walk buildCourseJson
       // uses (its backstop), so the pre-publish warnings and the build
-      // failure can never disagree — see collectPublishBlockers.
+      // failure can never disagree — see collectPublishBlockers. It narrows to
+      // the shipping Lessons itself, so the whole tree is the right argument:
+      // both lists come back already silent about a Placeholder Lesson.
       const { invalidLessonCombos, incompleteVideos } = collectPublishBlockers(
         version.sections,
         includeTodoLessons
       );
+
+      // What this floor announces, and what it drops — the one walk the publish
+      // page reads too, so the cards and the manifest cannot disagree.
+      const { ships, placeholderLessons, withheldLessons } =
+        collectLessonPublishStatuses(version.sections, {
+          includeTodoLessons,
+          placeholderFloor,
+        });
 
       return {
         unexportedVideoIds,
@@ -147,6 +199,13 @@ export const validatePublishability = Effect.fn("validatePublishability")(
         courseViewLints,
         invalidLessonCombos,
         incompleteVideos,
+        // The three Lesson Publish Status counts, so a caller that publishes
+        // can report what it announced and what it withheld without walking the
+        // tree a second time. `ships` plus the two list lengths is every Lesson
+        // in the version tree.
+        ships,
+        placeholderLessons,
+        withheldLessons,
       };
     };
 

@@ -24,7 +24,8 @@ import { DrizzleService } from "@/services/drizzle-service.server";
 import { VideoProcessingService } from "@/services/video-processing-service";
 import { CoursePublishService } from "@/services/course-publish-service";
 import { computeExportHash, type ExportClip } from "@/services/export-hash";
-import { clips as clipsTable } from "@/db/schema";
+import { clips as clipsTable, videos as videosTable } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import {
   honestRenderedDurationInSeconds,
   soundExportDurationProbe,
@@ -161,6 +162,14 @@ const setup = async () => {
     },
   ]);
 
+  // A COMPLETE, shippable Video: ADR 0029 makes a missing `body` or missing
+  // Clips a hard gap, which withholds the whole Lesson from every roster. A
+  // fixture that means to be published has to say so.
+  await testDb
+    .update(videosTable)
+    .set({ body: "Lesson body content", description: "SEO description" })
+    .where(eq(videosTable.id, video.id));
+
   const clips: ExportClip[] = [
     {
       videoFilename: "recording.mp4",
@@ -235,6 +244,11 @@ const addVideo = async (
       return clip;
     })
   );
+  // Complete, so the Lesson it joins keeps shipping (ADR 0029).
+  await testDb
+    .update(videosTable)
+    .set({ body: `${title} body`, description: `${title} description` })
+    .where(eq(videosTable.id, created.id));
   return created;
 };
 
@@ -344,21 +358,50 @@ describe("CoursePublishService", () => {
     });
 
     // A Video with no Clips has no Export Hash, so there is nothing to render
-    // and nothing to compare an existing file against. The roster walks past
-    // it rather than queueing an export that could only fail. Moved here from
-    // the retired batch-export.server.ts suite, which asserted the same rule
-    // against a copy of the roster that no route called.
-    it("skips a video with no clips", async () => {
-      const context = await setup();
-      const { dbLayer, lesson } = context;
-
-      await Effect.gen(function* () {
+    // and nothing to compare an existing file against — the roster must never
+    // queue an export that could only fail. Moved here from the retired
+    // batch-export.server.ts suite, which asserted the same rule against a copy
+    // of the roster that no route called.
+    //
+    // ADR 0029 moved WHERE that is decided: no Clips is a hard gap, and a Lesson
+    // is all-or-nothing, so the whole Lesson is withheld from the roster. Both
+    // halves of that are asserted, because between them they are the rule: the
+    // clip-less Video is never exported, and neither is the sound Video beside
+    // it.
+    const addCliplessVideo = async ({ dbLayer }: Setup, lessonId: string) =>
+      Effect.gen(function* () {
         const videoOps = yield* VideoOperationsService;
-        return yield* videoOps.createVideo(lesson.id, {
+        return yield* videoOps.createVideo(lessonId, {
           title: "Clipless",
           originalFootagePath: "/tmp/footage.mp4",
         });
       }).pipe(Effect.provide(dbLayer), Effect.runPromise);
+
+    it("withholds the whole lesson a clip-less video sits on", async () => {
+      const context = await setup();
+
+      // Beside the seeded, clip-bearing "Problem": one hard gap decides the
+      // Lesson, so NEITHER Video is exported.
+      await addCliplessVideo(context, context.lesson.id);
+
+      const events = await runBatchExport(context);
+
+      expect(announcedTitles(events)).toEqual([]);
+    });
+
+    it("leaves the rest of the course shipping around it", async () => {
+      const context = await setup();
+      const { dbLayer, section } = context;
+
+      // On a Lesson of its own this time, so only that Lesson is withheld.
+      const lessonId = await Effect.gen(function* () {
+        const lsOps = yield* LessonSectionOperationsService;
+        const lessons = yield* lsOps.createLessons(section.id, [
+          { lessonPathWithNumber: "01.02-clipless", lessonNumber: 2 },
+        ]);
+        return lessons[0]!.id;
+      }).pipe(Effect.provide(dbLayer), Effect.runPromise);
+      await addCliplessVideo(context, lessonId);
 
       const events = await runBatchExport(context);
 
