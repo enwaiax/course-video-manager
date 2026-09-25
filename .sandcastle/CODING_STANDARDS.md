@@ -1,9 +1,7 @@
 # Coding standards
 
 The rules a human or an agent holds in their head while writing and reviewing
-code here. Rules a machine already enforces sit in
-[Checked by machine, not by you](#checked-by-machine-not-by-you) at the bottom —
-read that table once, then spend no review attention on it.
+code here.
 
 ## Effect and configuration
 
@@ -117,18 +115,3 @@ Writing, changing or reviewing a test — for the worked good and bad examples,
 the red-flag list, the rule for Remotion renderer packages, and the
 vertical-slice TDD loop, read
 [`TESTING_STANDARDS.md`](./TESTING_STANDARDS.md).
-
-## Checked by machine, not by you
-
-These rules were here once. A check enforces each one now, so spend no review attention on them — `pnpm run check` runs the lot.
-
-| Rule                                          | Check                              |
-| --------------------------------------------- | ---------------------------------- |
-| `localStorage` goes through `useLocalStorage` | `oxlint` (`no-restricted-globals`) |
-| `import.meta.dirname` over CJS `__dirname`    | `scripts/check-no-dirname.sh`      |
-| No test or utility files in `app/routes`      | `scripts/check-routes-folder.sh`   |
-| Every env key documented in `.env.example`    | `scripts/check-env-example.sh`     |
-| No file over 5,500 tokens                     | `scripts/check-file-tokens.sh`     |
-| Deep-module import boundaries                 | `pnpm run lint:boundaries`         |
-
-Oxlint's own `correctness` set runs advisory: its warnings are a standing backlog, cleared by hand in the PRs that touch each file.
