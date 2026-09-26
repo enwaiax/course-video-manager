@@ -28,6 +28,8 @@ import {
   NEEDS_CLIP_MOCKUP_DIRECTORY,
   requireLocalMachine,
 } from "@/cli/local-only";
+import { resolveBeforeAnimaticItemId } from "./animatic-position";
+import { listAnimaticRows } from "./animatic-rows";
 import {
   HELP,
   ADD_HELP,
@@ -105,6 +107,17 @@ const afterOption = Options.text("after").pipe(
     "Place immediately after this Clip Mockup id (mutually exclusive with --before)."
   ),
   Options.optional
+);
+
+/**
+ * Off by default, and that default is a contract: without this flag the stream
+ * is byte for byte what it always was. With it, every row gains `type` and
+ * `position` and the Chapter rows are interleaved.
+ */
+const withChaptersOption = Options.boolean("with-chapters").pipe(
+  Options.withDescription(
+    "Interleave the Video's Clip Mockup Chapters into the stream, and add 'type' and 'position' to every row."
+  )
 );
 
 const optionalIdArg = Args.text({ name: "id" }).pipe(Args.optional);
@@ -234,50 +247,6 @@ const resolveTargetClipMockup = (params: {
       );
     }
     return row;
-  });
-
-/**
- * Turn `--before` / `--after` into the "insert before this id" anchor the
- * service takes. `null` means the end of the Animatic. A verbatim copy of the
- * Beat anchoring, because the ordering key is the same fractional index.
- */
-const resolveBeforeClipMockupId = (params: {
-  readonly videoId: string;
-  readonly before: Option.Option<string>;
-  readonly after: Option.Option<string>;
-  readonly excludeId: string;
-}) =>
-  Effect.gen(function* () {
-    const before = Option.getOrUndefined(params.before);
-    const after = Option.getOrUndefined(params.after);
-
-    yield* rejectBothFlags({
-      a: before,
-      b: after,
-      flags: ["--before", "--after"],
-      entity: "clipMockup",
-    });
-    if (before === undefined && after === undefined) {
-      return null;
-    }
-
-    const svc = yield* ClipMockupOperationsService;
-    const rows = (yield* svc.listClipMockupsByVideoId(params.videoId)).filter(
-      (r) => r.id !== params.excludeId
-    );
-
-    if (before !== undefined) {
-      if (!rows.some((r) => r.id === before)) {
-        return yield* notFound("clipMockup", before);
-      }
-      return before;
-    }
-
-    const idx = rows.findIndex((r) => r.id === after);
-    if (idx === -1) {
-      return yield* notFound("clipMockup", after!);
-    }
-    return rows[idx + 1]?.id ?? null;
   });
 
 /**
@@ -449,13 +418,23 @@ const addCmd = Command.make(
     })
 ).pipe(Command.withDescription(detail(ADD_HELP)));
 
-const listCmd = Command.make("list", { video: videoOption }, ({ video }) =>
-  Effect.gen(function* () {
-    yield* requireLocalFrameStore;
-    const row = yield* requireActiveVideo(video);
-    const svc = yield* ClipMockupOperationsService;
-    yield* emitNdjson(yield* svc.listClipMockupsByVideoId(row.id));
-  })
+const listCmd = Command.make(
+  "list",
+  { video: videoOption, withChapters: withChaptersOption },
+  ({ video, withChapters }) =>
+    Effect.gen(function* () {
+      yield* requireLocalFrameStore;
+      const row = yield* requireActiveVideo(video);
+      // Two streams, and the bare one stays exactly as it was: no extra field
+      // and no extra row. Every `jq` pipeline in the animatic skill reads it,
+      // down to `map(.durationSeconds) | add` for a Video's run time.
+      if (withChapters) {
+        yield* emitNdjson(yield* listAnimaticRows(row.id));
+        return;
+      }
+      const svc = yield* ClipMockupOperationsService;
+      yield* emitNdjson(yield* svc.listClipMockupsByVideoId(row.id));
+    })
 ).pipe(Command.withDescription(detail(LIST_HELP)));
 
 const getCmd = Command.make("get", { ids: idsArg }, ({ ids }) =>
@@ -555,7 +534,10 @@ const moveCmd = Command.make(
     Effect.gen(function* () {
       yield* requireLocalFrameStore;
       const row = yield* resolveTargetClipMockup({ id, video, at });
-      const beforeClipMockupId = yield* resolveBeforeClipMockupId({
+      // Resolved over the MERGED Animatic — Clip Mockups AND the Chapters
+      // that divide them — because the two share one order key space.
+      const beforeClipMockupId = yield* resolveBeforeAnimaticItemId({
+        entity: "clipMockup",
         videoId: row.videoId,
         before,
         after,

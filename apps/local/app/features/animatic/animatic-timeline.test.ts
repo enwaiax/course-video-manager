@@ -14,8 +14,7 @@ import { AUTO_EDITED_END_PADDING_SECONDS } from "@/silence-detection-constants";
  * The clock the whole player runs on: the run time the page prints, the frame
  * the scrub bar lands on and the frame "jump to number 14" seeks to are all
  * these numbers. It is pure arithmetic over rows, so it is tested straight —
- * no Remotion, no jsdom, exactly as `clip-mockup-dnd.test.ts` tests the drag
- * arithmetic.
+ * no Remotion, no jsdom.
  */
 
 const mockup = (
@@ -27,6 +26,7 @@ const mockup = (
   line: `Line ${position}.`,
   position,
   durationSeconds,
+  order: `a${position}`,
   imageUrl: `/api/clip-mockups/cm_${position}/image`,
   audioUrl: `/api/clip-mockups/cm_${position}/audio`,
   imageMissing: false,
