@@ -18,12 +18,16 @@ import { listAnimaticOrder } from "./db-animatic-order.server.js";
  * above it, so archiving a divider absorbs its rows upward with no write, and
  * moving a row can never leave a stale parent behind.
  *
- * TWO DELIBERATE ASYMMETRIES with the Chapters that group filmed Clips:
+ * NO DRAFT GUARD, AND THAT IS A BUG (owed work, not a design). Every write here
+ * should call `requireDraftVersionForVideo`, as `ClipOperationsService`'s
+ * chapter writes do. Without it a stranded write goes straight through, and it
+ * has: 57 Chapters and 190 Clip Mockups landed on a published Version, where
+ * nothing reads them. `ClipMockupOperationsService` owes the same guard. The
+ * write-closure reasoning this omission rested on, and why it was wrong, is in
+ * CODING_STANDARDS.md under "A write to anything a Version owns goes through
+ * the Draft guard".
  *
- *   NO DRAFT GUARD. `ClipOperationsService`'s chapter writes all call
- *   `requireDraftVersionForVideo`, because a Clip is inside the published
- *   Course Version write-closure. A Clip Mockup sits outside it, and its
- *   grouping follows the thing it groups.
+ * ONE DELIBERATE ASYMMETRY with the Chapters that group filmed Clips:
  *
  *   NO DISK. Like the Clip Mockup service this touches no file, so nothing here
  *   is local-only: a divider is a row, while a frame and a WAV are a directory
