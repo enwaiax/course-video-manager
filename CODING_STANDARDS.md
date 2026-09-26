@@ -24,6 +24,37 @@ Optional parameters passed to functions should be scrutinised extremely
 carefully. They are a huge source of bugs (by omission). Prioritise correctness
 over backwards compatibility.
 
+## Types
+
+### Every `any` is a leak
+
+An `any` switches the type checker off for every value that flows through it,
+and those values keep flowing long after the line that produced them. Write the
+type you actually mean. A shape you know gets a name — one `interface` at the
+top beats a cast at each of thirteen call sites. A shape you do not know yet
+gets `unknown`, and then gets narrowed, which is the honest form of `any`: it
+makes the reader prove the shape before using it. A shape that varies by caller
+gets a generic **constrained** to the real thing, because `<R extends
+LayerLive>` says what a bare `<R>` does not. A symbol or brand a library owns
+gets the library's own exported id (`Runtime.FiberFailureCauseId`) rather than a
+cast.
+
+What a leak costs, from this repo: `makeLoader` took `runtime:
+ManagedRuntime<any, any>` and left its `R` unconstrained. A route asked for a
+service the runtime did not provide, `tsgo` stayed green across all 111 route
+modules, and the Animatic page returned a 500 on every load. The `any` did not
+cause the missing service — it removed the one thing that would have caught it.
+
+An `any` survives review when a third-party type is genuinely `any` at the
+boundary and nothing narrower type-checks. Contain it: cast once at the edge
+into a named type, and keep the `any` out of the signature everything else
+calls. An `any` in an exported signature leaks to every caller; an `any` inside
+one function body does not.
+
+A new `any` needs a reason in the PR. An `any` already sitting in a file you are
+touching is an invitation, the same way an oxlint `correctness` warning is — a
+file should leave review with fewer of them than it had.
+
 ## Entities and their actions
 
 ### Every entity is right-clickable
@@ -137,4 +168,4 @@ internal, redesign the interface.
 Writing, changing or reviewing a test — for the worked good and bad examples,
 the red-flag list, the rule for Remotion renderer packages, and the
 vertical-slice TDD loop, read
-[`TESTING_STANDARDS.md`](./TESTING_STANDARDS.md).
+[`TESTING_STANDARDS.md`](./docs/TESTING_STANDARDS.md).
